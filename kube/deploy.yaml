@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-fixer
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-fixer
+  template:
+    metadata:
+      labels:
+        app: ai-fixer
+    spec:
+      containers:
+        - name: ai-fixer
+          image: ai-fixer:1.0
+          args: ["--kubeconfig=/config/kubeconfig.yaml"]
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: kubeconfig
+          secret:
+            secretName: kubeconfig
