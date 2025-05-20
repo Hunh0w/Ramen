@@ -6,3 +6,10 @@ catalog:
     engine: OLlama
     minReplicas: 1
     resourceProfile: 'cpu:1'
+  qwen2.5-coder-1.5b-cpu:
+    enabled: true
+    features: ["TextGeneration"]
+    url: "ollama://qwen2.5-coder:1.5b"
+    engine: OLlama
+    minReplicas: 1
+    resourceProfile: cpu:1
