@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ai-fixer
-  namespace: default
+  namespace: kube
 spec:
   replicas: 1
   selector:
