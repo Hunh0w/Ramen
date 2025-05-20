@@ -1,0 +1,47 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Output of `go build`
+/*.out
+/build/
+/bin/
+/dist/
+
+# Go workspace file (if using Go 1.18+ with workspaces)
+go.work
+go.work.sum
+
+# Dependency directories (if using vendoring)
+/vendor/
+
+# Go coverage files
+*.cover
+*.coverprofile
+*.testprofile
+*.prof
+*.tmp
+
+# Logs
+*.log
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Docker and Kubernetes
+*.env
+.envrc
+.dockerignore
+Dockerfile.*
+kubeconfig.yaml
