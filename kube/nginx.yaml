@@ -15,4 +15,4 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: nginx:blabla
+          image: nginx:blech # replace with the correct tag or image registry where your image is hosted
