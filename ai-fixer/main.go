@@ -17,8 +17,8 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	// watch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	"sigs.k8s.io/yaml"
 
 	"github.com/google/go-github/v55/github"
 	"golang.org/x/oauth2"
@@ -36,8 +37,8 @@ func main() {
 	// Accept optional kubeconfig flag
 	kubeconfig := flag.String("kubeconfig", "", "Path to the kubeconfig file (optional if in-cluster)")
 	namespace := flag.String("namespace", "app-namespace", "Namespace to watch (default is all)")
-	ai_url := flag.String("ai_url", "", "url to access ai")
 	flag.Parse()
+	ai_url := os.Getenv("AI_URL")
 
 	// Set up config
 	config, err := getKubeConfig(*kubeconfig)
@@ -67,7 +68,7 @@ func main() {
 
 	// Start watching events
 	fmt.Println("Starting event watcher...")
-	watchEvents(ctx, clientset, *namespace, *ai_url)
+	watchEvents(ctx, clientset, *namespace, ai_url)
 }
 
 func getKubeConfig(kubeconfigPath string) (*rest.Config, error) {
@@ -86,12 +87,12 @@ var (
 	bufferTimeout = 10 * time.Second
 )
 
-func flushErrors(ai_url string) {
+func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clientset) string {
 	bufferMutex.Lock()
 	defer bufferMutex.Unlock()
 
 	if len(errorBuffer) == 0 {
-		return
+		return ""
 	}
 
 	combined := ""
@@ -99,7 +100,51 @@ func flushErrors(ai_url string) {
 		combined += msg + "\n"
 	}
 	errorBuffer = nil
-	yaml := sendAI(combined, ai_url)
+	resp := sendAI(combined, ai_url)
+	// Regex to capture content between triple backticks and optional "yaml"
+	re := regexp.MustCompile("(?s)```(?:yaml)?\\s*(.*?)\\s*```")
+	matches := re.FindStringSubmatch(resp)
+	fmt.Println(matches)
+	if len(matches) >= 2 {
+		// get final yaml
+		yamlData := matches[1]
+		yamlData = regexp.MustCompile(`\\n`).ReplaceAllString(yamlData, "\n")
+		yamlData = regexp.MustCompile(`\\t`).ReplaceAllString(yamlData, "\t")
+		yamlData = regexp.MustCompile(`\\\"`).ReplaceAllString(yamlData, "\"")
+		yamlData = regexp.MustCompile(`\\\\`).ReplaceAllString(yamlData, "\\")
+		yamlData = regexp.MustCompile(`^\s+|\s+$`).ReplaceAllString(yamlData, "")
+		// Parse YAML into Deployment object
+		var deploy appsv1.Deployment
+		err := yaml.Unmarshal([]byte(yamlData), &deploy)
+		if err != nil {
+			fmt.Printf("Error parsing YAML: %v\n", err)
+			return ""
+		}
+
+		// Apply updated yamlData
+		deploymentsClient := clientset.AppsV1().Deployments("app-namespace")
+
+		// verify that it exists
+		deployment, err := deploymentsClient.Get(ctx, deploy.Name, metav1.GetOptions{})
+		if err == nil {
+			// Update existing deployment
+			deploy.ResourceVersion = deployment.ResourceVersion
+			_, err = deploymentsClient.Update(ctx, &deploy, metav1.UpdateOptions{})
+			if err != nil {
+				fmt.Printf("Error applying deployment: %v\n", err)
+				return ""
+			}
+			fmt.Println("Deployment updated")
+		} else {
+			fmt.Printf("Deployment could not be found. %v\n", err)
+			return ""
+		}		
+		return yamlData
+	} else {
+		fmt.Println("YAML block not found")
+		return ""
+	}
+	// TODO test if it works or throws an error
 	createPullRequest(yaml, combined)
 }
 
@@ -221,8 +266,6 @@ func sendAI(message string, ai_url string) (string) {
 
 	final_message := "Here is the manifest of the deployed application in Kubernetes: \n```yaml\n" + string(manifestBody) + "\n```\n and here is the error:\n```\n" + message + "\n```\nPlease return the corrected manifest that I can apply. Please be very conscise. I only need the manifest. Please provide only the full corrected manifest."
 
-	fmt.Printf(final_message)
-
 	payload := map[string]interface{}{
 		"model": "qwen2.5-coder-1.5b-cpu",
 		"messages": []map[string]string{
@@ -249,19 +292,7 @@ func sendAI(message string, ai_url string) (string) {
 
 	respBody, _ := io.ReadAll(resp.Body)
 	fmt.Println("\nKubeAi response:\n")
-	// Regex to capture content between triple backticks and optional "yaml"
-	re := regexp.MustCompile("(?s)```(?:yaml)?\\s*(.*?)\\s*```")
-	matches := re.FindStringSubmatch(string(respBody))
-	fmt.Println(matches)
-	if len(matches) >= 2 {
-		// get final yaml
-		yaml := matches[1]
-		fmt.Println(yaml)
-		return yaml
-	} else {
-		fmt.Println("YAML block not found")
-		return ""
-	}
+	return string(respBody)
 }
 
 func watchEvents(ctx context.Context, clientset *kubernetes.Clientset, namespace string, ai_url string) {
@@ -281,7 +312,7 @@ func watchEvents(ctx context.Context, clientset *kubernetes.Clientset, namespace
 			return
 		case <-ticker.C:
 			if time.Since(lastSent) >= bufferTimeout {
-				flushErrors(ai_url)
+				flushErrors(ctx, ai_url, clientset)
 				lastSent = time.Now()
 			}
 		case event, ok := <-watcher.ResultChan():
