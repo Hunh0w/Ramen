@@ -14,6 +14,7 @@ import (
 	"io"
 	"sync"
 	"regexp"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +22,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
+	"github.com/google/go-github/v55/github"
+	"golang.org/x/oauth2"
 )
 
 func main() {
@@ -91,19 +99,121 @@ func flushErrors(ai_url string) {
 		combined += msg + "\n"
 	}
 	errorBuffer = nil
-	sendAI(combined, ai_url)
+	yaml := sendAI(combined, ai_url)
+	createPullRequest(yaml, combined)
 }
 
+func createPullRequest(newYaml string, errors string) {
+	// Setup variables
+	repoURL := os.Getenv("GITHUB_URL")
+	authToken := os.Getenv("GITHUB_TOKEN")
+	now := time.Now()
+	formatted := now.Format("02.01.06-15.04") // dd.mm.yy-hh.mm
+	newBranch := "ai-fix/" + formatted
+	commitMessage := "fix: ai correction"
+	fileName := "kube/nginx.yaml"
+	fileContent := newYaml
+	repoPath := "./tmp-repo"
 
+	// Clone repo
+	repo, err := git.PlainClone(repoPath, false, &git.CloneOptions{
+		URL:      repoURL,
+		Progress: os.Stdout,
+		Auth: &githttp.BasicAuth{
+			Username: "ai-fixer", // anything but must be non-empty
+			Password: authToken,
+		},
+	})
+	if err != nil {
+		fmt.Printf("Failed to clone repo: %v", err)
+	}
 
-func sendAI(message string, ai_url string) {
+	wt, _ := repo.Worktree()
+
+	// Create new branch
+	refName := plumbing.NewBranchReferenceName(newBranch)
+	err = wt.Checkout(&git.CheckoutOptions{
+		Branch: refName,
+		Create: true,
+	})
+	if err != nil {
+		fmt.Printf("Failed to checkout new branch: %v", err)
+	}
+
+	if strings.HasPrefix(fileContent, `\n`) {
+		fileContent = fileContent[2:] // Remove first two characters
+	}
+
+	// Replace all \n (two-character sequence) with actual newline
+	formattedContent := strings.ReplaceAll(fileContent, `\n`, "\n")
+
+	// Write a file
+	filePath := fmt.Sprintf("%s/%s", repoPath, fileName)
+	err = os.WriteFile(filePath, []byte(formattedContent), 0644)
+	if err != nil {
+		fmt.Printf("Failed to write file: %v", err)
+	}
+
+	// Stage and commit
+	_, err = wt.Add(fileName)
+	if err != nil {
+		fmt.Printf("Failed to add file: %v", err)
+	}
+
+	_, err = wt.Commit(commitMessage, &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "AI Fixer",
+			Email: "ai@fixer.com",
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		fmt.Printf("Failed to commit: %v", err)
+	}
+
+	// Push the branch
+	err = repo.Push(&git.PushOptions{
+		Auth: &githttp.BasicAuth{
+			Username: "ai-fixer",
+			Password: authToken,
+		},
+		RefSpecs: []config.RefSpec{
+			config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", newBranch, newBranch)),
+		},
+	})
+	if err != nil {
+		fmt.Printf("Failed to push: %v", err)
+	}
+
+	// Create pull request
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: authToken})
+	tc := oauth2.NewClient(ctx, ts)
+	client := github.NewClient(tc)
+
+	newPR := &github.NewPullRequest{
+		Title: github.String("PR: " + newBranch),
+		Head:  github.String(newBranch), // same as the pushed branch
+		Base:  github.String("main"),    // your target base branch
+		Body:  github.String("This PR proposes AI-generated fix for these errors: \n" + errors),
+	}
+
+	pr, _, err := client.PullRequests.Create(ctx, "Hunh0w", "Ramen", newPR)
+	if err != nil {
+		fmt.Printf("Failed to create pull request: %v", err)
+	}
+
+	fmt.Printf("Pull request created: %s\n", pr.GetHTMLURL())
+}
+
+func sendAI(message string, ai_url string) (string) {
 
 	// get manifest that has problems - since we only have 1 app it is this one
 	manifest_url := "https://raw.githubusercontent.com/Hunh0w/Ramen/refs/heads/main/kube/nginx.yaml"
 	manifest, err := http.Get(manifest_url)
 	if err != nil {
 		fmt.Printf("Failed to get manifest\n", err)
-		return
+		return ""
 	}
 	defer manifest.Body.Close()
 	manifestBody, _ := io.ReadAll(manifest.Body)
@@ -126,14 +236,14 @@ func sendAI(message string, ai_url string) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		fmt.Printf("Failed to marshal payload: %v\n", err)
-		return
+		return ""
 	}
 
 	url := ai_url + "/openai/v1/chat/completions"
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		fmt.Printf("Failed to send request to KubeAi: %v\n", err)
-		return
+		return ""
 	}
 	defer resp.Body.Close()
 
@@ -147,8 +257,10 @@ func sendAI(message string, ai_url string) {
 		// get final yaml
 		yaml := matches[1]
 		fmt.Println(yaml)
+		return yaml
 	} else {
 		fmt.Println("YAML block not found")
+		return ""
 	}
 }
 
@@ -187,6 +299,7 @@ func watchEvents(ctx context.Context, clientset *kubernetes.Clientset, namespace
 					e.Reason, e.Message)
 
 				bufferMutex.Lock()
+				fmt.Println(msg)
 				errorBuffer = append(errorBuffer, msg)
 				bufferMutex.Unlock()
 			}			
