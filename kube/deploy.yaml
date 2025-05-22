@@ -16,11 +16,14 @@ spec:
       containers:
         - name: ai-fixer
           image: ai-fixer:1.0
-          args: ["--kubeconfig=/config/kubeconfig.yaml --ai_url=kubeai"]
+          args: ["--kubeconfig=/config/kubeconfig.yaml"]
           volumeMounts:
             - name: kubeconfig
               mountPath: /config
               readOnly: true
+          env:
+            - name: AI_URL
+              value: kubeai
       volumes:
         - name: kubeconfig
           secret:
