@@ -1,0 +1,9 @@
+uvicorn
+urllib3
+requests
+fastapi
+gTTS
+idna
+pydub
+SpeechRecognition
+starlette
