@@ -15,10 +15,12 @@ import (
 	"sync"
 	"regexp"
 	"strings"
+	"errors"
 
 	v1 "k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	watch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -87,6 +89,27 @@ var (
 	bufferTimeout = 10 * time.Second
 )
 
+func int64Ptr(i int64) *int64 { return &i }
+
+func extractYaml(message string) (string, error) {
+	// Regex to capture content between triple backticks and optional "yaml"
+	re := regexp.MustCompile("(?s)```(?:yaml)?\\s*(.*?)\\s*```")
+	matches := re.FindStringSubmatch(message)
+	if len(matches) >= 2 {
+		// get final yaml
+		yamlData := matches[1]
+		yamlData = regexp.MustCompile(`\\n`).ReplaceAllString(yamlData, "\n")
+		yamlData = regexp.MustCompile(`\\t`).ReplaceAllString(yamlData, "\t")
+		yamlData = regexp.MustCompile(`\\\"`).ReplaceAllString(yamlData, "\"")
+		yamlData = regexp.MustCompile(`\\\\`).ReplaceAllString(yamlData, "\\")
+		yamlData = regexp.MustCompile(`^\s+|\s+$`).ReplaceAllString(yamlData, "")
+		return yamlData, nil
+	 } else {
+		return "", errors.New("Message contains no yaml")
+	}
+}
+
+
 func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clientset) string {
 	bufferMutex.Lock()
 	defer bufferMutex.Unlock()
@@ -101,18 +124,8 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 	}
 	errorBuffer = nil
 	resp := sendAI(combined, ai_url)
-	// Regex to capture content between triple backticks and optional "yaml"
-	re := regexp.MustCompile("(?s)```(?:yaml)?\\s*(.*?)\\s*```")
-	matches := re.FindStringSubmatch(resp)
-	fmt.Println(matches)
-	if len(matches) >= 2 {
-		// get final yaml
-		yamlData := matches[1]
-		yamlData = regexp.MustCompile(`\\n`).ReplaceAllString(yamlData, "\n")
-		yamlData = regexp.MustCompile(`\\t`).ReplaceAllString(yamlData, "\t")
-		yamlData = regexp.MustCompile(`\\\"`).ReplaceAllString(yamlData, "\"")
-		yamlData = regexp.MustCompile(`\\\\`).ReplaceAllString(yamlData, "\\")
-		yamlData = regexp.MustCompile(`^\s+|\s+$`).ReplaceAllString(yamlData, "")
+	yamlData, err := extractYaml(resp)
+	if (err == nil) {
 		// Parse YAML into Deployment object
 		var deploy appsv1.Deployment
 		err := yaml.Unmarshal([]byte(yamlData), &deploy)
@@ -120,9 +133,9 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 			fmt.Printf("Error parsing YAML: %v\n", err)
 			return ""
 		}
-
+		
 		// Apply updated yamlData
-		deploymentsClient := clientset.AppsV1().Deployments("app-namespace")
+		deploymentsClient := clientset.AppsV1().Deployments(deploy.Namespace)
 
 		// verify that it exists
 		deployment, err := deploymentsClient.Get(ctx, deploy.Name, metav1.GetOptions{})
@@ -134,18 +147,49 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 				fmt.Printf("Error applying deployment: %v\n", err)
 				return ""
 			}
-			fmt.Println("Deployment updated")
+			fmt.Println("Deployment updated\n")
+			fmt.Printf("Watching deployment\n")
+			watcher, err := deploymentsClient.Watch(ctx, metav1.ListOptions{
+				FieldSelector:  "metadata.name=" + deploy.Name,
+				TimeoutSeconds: int64Ptr(300),
+			})
+			if err != nil {
+				fmt.Printf("Can't watch deployment: %v\n", err)
+				return ""
+			}
+			ready := int32(0)
+			newerrors := combined + "\nAfter updating the deployment its status changed:\n"
+			for event := range watcher.ResultChan() {
+				d := event.Object.(*appsv1.Deployment)
+				if (event.Type == watch.Error) {
+					statusErr, ok := event.Object.(*metav1.Status)
+					if ok {
+						newerrors += statusErr.Message + "\n"
+					}
+				}
+				ready = *d.Spec.Replicas - d.Status.ReadyReplicas
+			}
+			if (ready == 0) {
+				fmt.Printf("Deployment has successfully been updated.\nCreating pull request.\n")
+				//createPullRequest(yaml, newerrors)
+			} else {
+				fmt.Printf("Deployment is still not working. Preparing to call the one in charge..")
+				callHuman()
+			}
+
 		} else {
 			fmt.Printf("Deployment could not be found. %v\n", err)
 			return ""
 		}		
 		return yamlData
 	} else {
-		fmt.Println("YAML block not found")
+		fmt.Println("YAML block not found. %v\n", err)
 		return ""
 	}
-	// TODO test if it works or throws an error
-	createPullRequest(yaml, combined)
+}
+
+func callHuman() {
+	fmt.Printf("Calling")
 }
 
 func createPullRequest(newYaml string, errors string) {

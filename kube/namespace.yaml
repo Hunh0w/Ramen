@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-namespace
+  labels:
+    shared-gateway-access: "true"
+    name: app-namespace
