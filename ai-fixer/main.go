@@ -148,11 +148,10 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 				fmt.Printf("Error applying deployment: %v\n", err)
 				return ""
 			}
-			fmt.Println("Deployment updated\n")
-			fmt.Printf("Watching deployment\n")
+			fmt.Printf("Deployment updated\nWatching it...")
 			watcher, err := deploymentsClient.Watch(ctx, metav1.ListOptions{
 				FieldSelector:  "metadata.name=" + deploy.Name,
-				TimeoutSeconds: int64Ptr(300),
+				TimeoutSeconds: int64Ptr(30), // TODO change to 300
 			})
 			if err != nil {
 				fmt.Printf("Can't watch deployment: %v\n", err)
@@ -172,7 +171,7 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 			}
 			if (ready == 0) {
 				fmt.Printf("Deployment has successfully been updated.\nCreating pull request.\n")
-				//createPullRequest(yaml, newerrors)
+				createPullRequest("fix: ai correction", "kube/app_cluster/nginx.yaml", yamlData, "This PR proposes AI-generated fix for these errors: \n" + errors)
 			} else {
 				fmt.Printf("Deployment is still not working. Preparing to call the one in charge..")
 				callHuman(newerrors)
@@ -192,39 +191,49 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 func callHuman(kube_error string) {
 	fmt.Printf("Calling..")
 	form := url.Values{}
-	form.Add("text", kube_error)
 	phone_service_url := os.Getenv("PHONE_SERVICE_URL")
-	resp, err := http.PostForm(phone_service_url + "/phone_call", form)
+	resp, err := http.PostForm(phone_service_url + "/phone_call?text=" + url.QueryEscape(kube_error), form)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("Error response from service: %v", resp.Status)
 		return
 	}
-
-	mp3Data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("Failed to read mp3: %v", err)
-		return
-	}
-	err = os.WriteFile("/mnt/audio/audio.mp3", mp3Data, 0644)
-	if (err != nil) {
-		fmt.Printf("Error saving file %v", err)
-	}
 }
 
-func createPullRequest(newYaml string, errors string) {
-	// Setup variables
-	repoURL := os.Getenv("GITHUB_URL")
-	authToken := os.Getenv("GITHUB_TOKEN")
-	now := time.Now()
-	formatted := now.Format("02.01.06-15.04") // dd.mm.yy-hh.mm
-	newBranch := "ai-fix/" + formatted
-	commitMessage := "fix: ai correction"
-	fileName := "kube/nginx.yaml"
-	fileContent := newYaml
-	repoPath := "./tmp-repo"
+// cloneOrUpdateRepo either clones the repo if it doesn't exist, or pulls the latest changes
+func cloneOrUpdateRepo(repoPath, repoURL, authToken string) (*git.Repository, error) {
+	// Check if the directory exists
+	if _, err := os.Stat(repoPath + "/.git"); err == nil {
+		// Repo exists, open it
+		fmt.Println("Repository exists, pulling latest changes...")
+		repo, err := git.PlainOpen(repoPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open existing repo: %w", err)
+		}
 
-	// Clone repo
+		w, err := repo.Worktree()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get worktree: %w", err)
+		}
+
+		// Pull latest changes
+		err = w.Pull(&git.PullOptions{
+			RemoteName: "origin",
+			Auth: &githttp.BasicAuth{
+				Username: "ai-fixer", // can be anything non-empty
+				Password: authToken,
+			},
+		})
+		if err != nil && err != git.NoErrAlreadyUpToDate {
+			return nil, fmt.Errorf("failed to pull latest changes: %w", err)
+		}
+
+		fmt.Println("Repository updated successfully.")
+		return repo, nil
+	}
+
+	// Repo doesn't exist, clone it
+	fmt.Println("Cloning repository...")
 	repo, err := git.PlainClone(repoPath, false, &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
@@ -233,6 +242,28 @@ func createPullRequest(newYaml string, errors string) {
 			Password: authToken,
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone repo: %w", err)
+	}
+	fmt.Println("Repository cloned successfully.")
+	return repo, nil
+}
+
+func createPullRequest(commitMessage string, fileName string, fileContent string, prMessage string) {
+	// Setup variables
+	repoURL := os.Getenv("GITHUB_URL")
+	authToken := os.Getenv("GITHUB_TOKEN")
+	now := time.Now()
+	formatted := now.Format("02.01.06-15.04") // dd.mm.yy-hh.mm
+	newBranch := "ai-fix/" + formatted
+	commitMessage := commitMessage
+	fileName := fileName
+	fileContent := fileContent
+	repoPath := "./tmp-repo"
+
+	// Clone repo
+	repo, err := cloneOrUpdateRepo(repoPath, repoURL, authToken)
+
 	if err != nil {
 		fmt.Printf("Failed to clone repo: %v", err)
 	}
@@ -304,7 +335,7 @@ func createPullRequest(newYaml string, errors string) {
 		Title: github.String("PR: " + newBranch),
 		Head:  github.String(newBranch), // same as the pushed branch
 		Base:  github.String("main"),    // your target base branch
-		Body:  github.String("This PR proposes AI-generated fix for these errors: \n" + errors),
+		Body:  github.String(prMessage),
 	}
 
 	pr, _, err := client.PullRequests.Create(ctx, "Hunh0w", "Ramen", newPR)
@@ -393,7 +424,6 @@ func watchEvents(ctx context.Context, clientset *kubernetes.Clientset, namespace
 					e.Reason, e.Message)
 
 				bufferMutex.Lock()
-				fmt.Println(msg)
 				errorBuffer = append(errorBuffer, msg)
 				bufferMutex.Unlock()
 			}			
