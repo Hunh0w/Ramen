@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mp3-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/data/audio
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mp3-pvc
+  namespace: app-namespace
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-fixer
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-fixer
+  template:
+    metadata:
+      labels:
+        app: ai-fixer
+    spec:
+      containers:
+        - name: ai-fixer
+          image: ai-fixer:1.0
+          args: ["--kubeconfig=/config/kubeconfig.yaml"]
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /config
+              readOnly: true
+            - name: mp3-storage
+              mountPath: /mnt/audio
+          env:
+            - name: AI_URL
+              value: http://kubeai.default.svc.cluster.local
+            - name: PHONE_SERVICE_URL
+              value: http://phone-service.monitoring.svc.cluster.local:8000
+            - name: GITHUB_URL
+              value: https://github.com/Hunh0w/Ramen.git
+            - name: GITHUB_TOKEN
+              value: 
+      volumes:
+        - name: kubeconfig
+          secret:
+            secretName: kubeconfig
+        - name: mp3-storage
+          persistentVolumeClaim:
+            claimName: mp3-pvc

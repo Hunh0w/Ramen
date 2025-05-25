@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"errors"
+	"net/url"
 
 	v1 "k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -174,7 +175,7 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 				//createPullRequest(yaml, newerrors)
 			} else {
 				fmt.Printf("Deployment is still not working. Preparing to call the one in charge..")
-				callHuman()
+				callHuman(newerrors)
 			}
 
 		} else {
@@ -188,8 +189,27 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 	}
 }
 
-func callHuman() {
-	fmt.Printf("Calling")
+func callHuman(kube_error string) {
+	fmt.Printf("Calling..")
+	form := url.Values{}
+	form.Add("text", kube_error)
+	phone_service_url := os.Getenv("PHONE_SERVICE_URL")
+	resp, err := http.PostForm(phone_service_url + "/phone_call", form)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Error response from service: %v", resp.Status)
+		return
+	}
+
+	mp3Data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Failed to read mp3: %v", err)
+		return
+	}
+	err = os.WriteFile("/mnt/audio/audio.mp3", mp3Data, 0644)
+	if (err != nil) {
+		fmt.Printf("Error saving file %v", err)
+	}
 }
 
 func createPullRequest(newYaml string, errors string) {
@@ -298,7 +318,7 @@ func createPullRequest(newYaml string, errors string) {
 func sendAI(message string, ai_url string) (string) {
 
 	// get manifest that has problems - since we only have 1 app it is this one
-	manifest_url := "https://raw.githubusercontent.com/Hunh0w/Ramen/refs/heads/main/kube/nginx.yaml"
+	manifest_url := "https://raw.githubusercontent.com/Hunh0w/Ramen/refs/heads/main/kube/app_cluster/nginx.yaml"
 	manifest, err := http.Get(manifest_url)
 	if err != nil {
 		fmt.Printf("Failed to get manifest\n", err)
@@ -335,7 +355,6 @@ func sendAI(message string, ai_url string) (string) {
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	fmt.Println("\nKubeAi response:\n")
 	return string(respBody)
 }
 

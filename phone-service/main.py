@@ -6,9 +6,10 @@ import speech_recognition as sr
 from pydub import AudioSegment
 from io import BytesIO
 from gtts import gTTS
+from os import getenv
 
 CSV_FILE = "call_results.csv"
-KUBE_AI_BASE_URL = "http://10.43.220.74"
+KUBE_AI_BASE_URL = getenv("KUBE_AI_BASE_URL")
 
 app = FastAPI()
 

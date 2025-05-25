@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phone-service
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phone-service
+  template:
+    metadata:
+      labels:
+        app: phone-service
+    spec:
+      containers:
+        - name: phone-service
+          image: phone-service:v2.0
+          env:
+            - name: KUBE_AI_BASE_URL
+              value: http://kubeai.default.svc.cluster.local
+          volumeMounts:
+            - mountPath: /app/output
+              name: ps-storage
+      volumes:
+        - name: ps-storage
+          persistentVolumeClaim:
+            claimName: ps-pvc
