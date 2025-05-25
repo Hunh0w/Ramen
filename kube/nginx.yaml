@@ -15,4 +15,6 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: docker.io/alpine:latest
+          image: nginx:latest
+          ports:
+            - containerPort: 80
