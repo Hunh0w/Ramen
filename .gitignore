@@ -45,3 +45,5 @@ Thumbs.db
 .dockerignore
 Dockerfile.*
 kubeconfig.yaml
+
+.virtualenv
