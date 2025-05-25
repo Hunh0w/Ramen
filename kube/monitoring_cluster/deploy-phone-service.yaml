@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: phone-service
   namespace: monitoring
+  labels:
+    app: phone-service
 spec:
   replicas: 1
   selector:
@@ -15,14 +17,24 @@ spec:
     spec:
       containers:
         - name: phone-service
-          image: phone-service:v2.0
+          image: phone
+          imagePullPolicy: Never
           env:
             - name: KUBE_AI_BASE_URL
               value: http://kubeai.default.svc.cluster.local
-          volumeMounts:
-            - mountPath: /app/output
-              name: ps-storage
-      volumes:
-        - name: ps-storage
-          persistentVolumeClaim:
-            claimName: ps-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phone-service
+  namespace: monitoring
+  labels:
+    app: phone-service
+spec:
+  selector:
+    app: phone-service
+  type: NodePort
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
