@@ -5,7 +5,7 @@ metadata:
   namespace: app-namespace
 spec:
   replicas: 1
-  selector:
+  selector: 
     matchLabels:
       app: nginx
   template:
@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: nginx:latest
+          image: "nginx:blabla"
           ports:
             - containerPort: 80
