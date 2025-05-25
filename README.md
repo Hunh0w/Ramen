@@ -1,6 +1,6 @@
 # Projet Web
 
-## Sujet
+## Goal
 
 Développez un système scalable qui démarre un agent intelligent (hors cluster) capable de :
 
@@ -19,28 +19,31 @@ Développez un système scalable qui démarre un agent intelligent (hors cluster
 
 ## Schéma d'architecture
 
-![diagramme d'architecture](./diagram.png)
+![Architectural diagram](./diagram.png)
 
-Pour la suite, nous appellerons le cluster contenant les ias le "monitoring" et celui contenant les applications et pods à observer "app"
+Going forward, we will call the cluster with our app the "app" cluster and the one with all our tools the "monitoring" cluster.
 
 ## Prérequis
 
-avoir accès à deux cluster kubernetes  
-nous l'avons testé avec k3d en local et helm d'installé.
+You need to have helm installed.
 
 **Pour rappel:**
-créer 1 cluster qui s'appelle monitoring:
+
+We need to have access to 2 clusters, here is an exemple of how we create them using k3d:
 ```
 k3d cluster create monitoring
+k3d cluster create app
 ```
+If you already have two clusters available, you can skip this step.
 
 ## Kubernetes cluster "monitoring"
 
-Le cluster contenant les outils pour monitorer l'application ainsi que les ia.
+
+This is the cluster containing all necessary tools to monitor our application cluster as well as our AIs.
 
 ### KubeAi
 
-Pour déployer notre ai nous allons utiliser [KubeAi](https://www.kubeai.org/).
+To deploy the AI we are going to use [KubeAi](https://www.kubeai.org/).
 
 ```
 helm repo add kubeai https://www.kubeai.org
@@ -61,4 +64,24 @@ This application will monitor the logs of the remote cluster and if there are an
 - if the error is fixed -> open a pull request
 - else -> make a call to the phone-service to "call" the operator in charge
 
-To deploy them, 
+To deploy them, you need to first create a secret in the cluster containing the kubeconfig for the cluster that you want to read the logs from.
+You can do it by generating a kubeconfig file and creatign a secret like this:
+```
+kubectl create secret generic kubeconfig --from-file=PATH/kubeconfig -n=monitoring
+```
+
+You also need to create a GitHubToken with sufficient permission to open a pull request.
+
+### phone_service
+
+
+## Kubernetes cluster "app"
+
+Here we only need to deploy our app in its namespace.
+
+```
+kubectl apply -f kube/app_cluster/namespace.yaml
+kubectl apply -f kube/app_cluster/nginx.yaml
+```
+
+Our nginx application has a very simple error - the image is false. We ask it to retrieve the image nginx:blablabla which doesn't exist.

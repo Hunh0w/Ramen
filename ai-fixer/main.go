@@ -190,14 +190,13 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 
 func callHuman(kube_error string) {
 	fmt.Printf("Calling..")
-	form := url.Values{}
 	phone_service_url := os.Getenv("PHONE_SERVICE_URL")
-	resp, err := http.PostForm(phone_service_url + "/phone_call?text=" + url.QueryEscape(kube_error), form)
+	resp, err := http.Get(phone_service_url + "/phone_call?text=" + url.QueryEscape(kube_error))
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Error response from service: %v", resp.Status)
-		return
+	if err != nil {
+		fmt.Printf("Call did not succeed.")
 	}
+	fmt.Printf("Call successful")
 }
 
 // cloneOrUpdateRepo either clones the repo if it doesn't exist, or pulls the latest changes
@@ -256,9 +255,6 @@ func createPullRequest(commitMessage string, fileName string, fileContent string
 	now := time.Now()
 	formatted := now.Format("02.01.06-15.04") // dd.mm.yy-hh.mm
 	newBranch := "ai-fix/" + formatted
-	commitMessage := commitMessage
-	fileName := fileName
-	fileContent := fileContent
 	repoPath := "./tmp-repo"
 
 	// Clone repo
