@@ -171,7 +171,7 @@ func flushErrors(ctx context.Context, ai_url string, clientset *kubernetes.Clien
 			}
 			if (ready == 0) {
 				fmt.Printf("Deployment has successfully been updated.\nCreating pull request.\n")
-				createPullRequest("fix: ai correction", "kube/app_cluster/nginx.yaml", yamlData, "This PR proposes AI-generated fix for these errors: \n" + errors)
+				createPullRequest("fix: ai correction", "kube/app_cluster/nginx.yaml", yamlData, "This PR proposes AI-generated fix for these errors: \n" + combined)
 			} else {
 				fmt.Printf("Deployment is still not working. Preparing to call the one in charge..")
 				callHuman(newerrors)

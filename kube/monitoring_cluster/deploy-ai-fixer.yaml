@@ -39,7 +39,7 @@ spec:
     spec:
       containers:
         - name: ai-fixer
-          image: ai-fixer:1.0
+          image: ghcr.io/hunh0w/ramen/ai-fixer:v1.0
           args: ["--kubeconfig=/config/kubeconfig.yaml"]
           volumeMounts:
             - name: kubeconfig
