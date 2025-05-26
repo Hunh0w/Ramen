@@ -18,6 +18,5 @@ spec:
           image: nginx:latest
           resources:
             limits:
-              cpu: "10m"
-              memory: "1Mi"
-      
+              cpu: "50m" # Increased to 50m from 10m for CPU
+              memory: "64Mi" # Increased to 64Mi from 1Mi for RAM
