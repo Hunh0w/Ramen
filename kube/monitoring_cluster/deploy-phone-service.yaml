@@ -18,7 +18,7 @@ spec:
       containers:
         - name: phone-service
           image: ghcr.io/hunh0w/ramen/phone-service:v1.0
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           env:
             - name: KUBE_AI_BASE_URL
               value: http://kubeai.default.svc.cluster.local
