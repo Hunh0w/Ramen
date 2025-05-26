@@ -15,4 +15,9 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: nginx:blabla
+          image: nginx:latest
+          resources:
+            limits:
+              cpu: "10m"
+              memory: "1Mi"
+      
