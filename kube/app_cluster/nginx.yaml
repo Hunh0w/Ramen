@@ -17,7 +17,5 @@ spec:
         - name: nginx
           image: nginx:latest
           resources:
-            limits:
-              cpu: "10m"
-              memory: "1Mi"
-      
+            requests:
+              cpu: "5m"
