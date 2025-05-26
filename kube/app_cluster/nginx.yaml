@@ -18,5 +18,5 @@ spec:
           image: nginx:latest
           resources:
             limits:
-              cpu: "10m"
-              memory: "512Mi" # Adjust this value as needed
+              cpu: "20m"
+              memory: "2Mi"
