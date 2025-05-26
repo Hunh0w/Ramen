@@ -15,4 +15,9 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: mystery-nginx:latest
+          image: nginx:latest
+          resources:
+            limits:
+              cpu: "10m"
+              memory: "1Mi"
+      
