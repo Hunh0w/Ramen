@@ -19,4 +19,4 @@ spec:
           resources:
             limits:
               cpu: "10m"
-              memory: "30Mi"
+              memory: "128Mi" # Increase memory limit here
