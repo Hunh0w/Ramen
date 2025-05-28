@@ -1,6 +1,10 @@
-# Projet Web
+# Project Web
+
+By Dziyana Tsetserava, Muriel Paraire and Vincent Font.
 
 ## Goal
+
+"""
 
 Développez un système scalable qui démarre un agent intelligent (hors cluster) capable de :
 
@@ -16,18 +20,21 @@ Développez un système scalable qui démarre un agent intelligent (hors cluster
         - le speech utilisé
         - la réponse (boolean) à la question, est ce qu'il peut intervenir?
 
+"""
 
-## Schéma d'architecture
+## Architecture
 
-![Architectural diagram](./diagram.png)
+![Architecture diagram](./diagram.png)
+
+To view the project architecture and workflow in more detail, see [the pdf presenttion](presentation.pdf).
 
 Going forward, we will call the cluster with our app the "app" cluster and the one with all our tools the "monitoring" cluster.
 
-## Prérequis
+## Prerequisites
 
 You need to have helm installed.
 
-**Pour rappel:**
+**Reminder:**
 
 We need to have access to 2 clusters, here is an exemple of how we create them using k3d:
 ```
@@ -37,7 +44,6 @@ k3d cluster create app
 If you already have two clusters available, you can skip this step.
 
 ## Kubernetes cluster "monitoring"
-
 
 This is the cluster containing all necessary tools to monitor our application cluster as well as our AIs.
 
@@ -74,6 +80,15 @@ You also need to create a GitHubToken with sufficient permission to open a pull 
 
 ### phone_service
 
+Phone service app simulates a phone call executed if the AI doesn't manage to solve an error. It has the following endpoints:
+
+- `/phone_call`: simulates a phone call and saves the answer to a csv file in its container
+- `/tts`: creates a text using ai based on the error messages received and returns the mp3 created from the ai's answer
+- `/phone_response`: transcribes the content of a mp3 stored on disc and saves it to a file (with sentiment analysis done with the ai)
+- `/csv-results`: returns the csv file
+
+Only `/phone_call` is used by AI-fixer, the rest are for 
+demonstration purposes (to see the results of various steps that the `/phone_call` endpoint executes).
 
 ## Kubernetes cluster "app"
 
@@ -84,4 +99,4 @@ kubectl apply -f kube/app_cluster/namespace.yaml
 kubectl apply -f kube/app_cluster/nginx.yaml
 ```
 
-Our nginx application has a very simple error - the image is false. We ask it to retrieve the image nginx:blablabla which doesn't exist.
+Our nginx application has a very small resource limit. We expect the AI fixer to increase it.
